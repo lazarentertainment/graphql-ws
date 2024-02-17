@@ -802,29 +802,32 @@ export function makeServer<
               );
               if (maybeResult) operationResult = maybeResult;
 
-              if (isAsyncIterable(operationResult)) {
-                /** multiple emitted results */
-                if (!(id in ctx.subscriptions)) {
-                  // subscription was completed/canceled before the operation settled
-                  if (isAsyncGenerator(operationResult))
-                    operationResult.return(undefined);
-                } else {
-                  ctx.subscriptions[id] = operationResult;
-                  for await (const result of operationResult) {
-                    await emit.next(result, execArgs);
-                  }
+              if (!isAsyncIterable(operationResult)) {
+                /** treat a single emitted result as multiple results */
+                // eslint-disable-next-line no-inner-declarations
+                async function* asAsyncGenerator(result: ExecutionResult) {
+                  yield result;
                 }
-              } else {
-                /** single emitted result */
-                // if the client completed the subscription before the single result
-                // became available, he effectively canceled it and no data should be sent
-                if (id in ctx.subscriptions)
-                  await emit.next(operationResult, execArgs);
+
+                operationResult = asAsyncGenerator(operationResult);
               }
 
-              // lack of subscription at this point indicates that the client
-              // completed the subscription, he doesn't need to be reminded
-              await emit.complete(id in ctx.subscriptions);
+              if (id in ctx.subscriptions) {
+                ctx.subscriptions[id] = operationResult;
+                for await (const result of operationResult) {
+                  await emit.next(result, execArgs);
+                }
+
+                // lack of subscription at this point indicates that the client
+                // completed the subscription, he doesn't need to be reminded
+                await emit.complete(id in ctx.subscriptions);
+              } else {
+                // subscription was completed/canceled before the operation settled
+                if (isAsyncGenerator(operationResult))
+                  operationResult.return(undefined);
+
+                await emit.complete(false);
+              }
             } finally {
               // whatever happens to the subscription, we finally want to get rid of the reservation
               delete ctx.subscriptions[id];
