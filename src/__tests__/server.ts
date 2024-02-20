@@ -573,7 +573,7 @@ describe('Connect', () => {
     });
 
     await client.waitForClose(() => {
-      fail('Shouldnt have closed');
+      fail("Shouldn't have closed");
     }, 30);
   });
 
@@ -743,11 +743,11 @@ describe('Ping/Pong', () => {
     );
 
     await client.waitForMessage(() => {
-      fail('Shouldt have received a message');
+      fail("Shouldn't have received a message");
     }, 20);
 
     await client.waitForClose(() => {
-      fail('Shouldt have closed');
+      fail("Shouldn't have closed");
     }, 20);
   });
 
@@ -757,7 +757,7 @@ describe('Ping/Pong', () => {
     const closed = makeServer({}).opened(
       {
         protocol: GRAPHQL_TRANSPORT_WS_PROTOCOL,
-        send: () => fail('Shouldnt have responded to a ping'),
+        send: () => fail("Shouldn't have responded to a ping"),
         close: () => {
           /**/
         },
@@ -771,7 +771,7 @@ describe('Ping/Pong', () => {
             done();
           });
         },
-        onPong: () => fail('Nothing shouldve ponged'),
+        onPong: () => fail("Nothing should've ponged"),
       },
       {},
     );
@@ -790,7 +790,7 @@ describe('Ping/Pong', () => {
         onMessage: (cb) => {
           cb(stringifyMessage({ type: MessageType.Pong, payload }));
         },
-        onPing: () => fail('Nothing shouldve pinged'),
+        onPing: () => fail("Nothing should've pinged"),
         onPong: (pyld) => {
           setImmediate(() => {
             expect(pyld).toEqual(payload);
@@ -888,8 +888,9 @@ describe('Subscribe', () => {
       });
     });
 
+    await client.waitForMessage();
     await client.waitForClose(() => {
-      fail('Shouldt have closed');
+      fail("Shouldn't have closed");
     }, 30);
   });
 
@@ -936,7 +937,7 @@ describe('Subscribe', () => {
     });
 
     await client.waitForClose(() => {
-      fail('Shouldt have closed');
+      fail("Shouldn't have closed");
     }, 30);
   });
 
@@ -992,7 +993,7 @@ describe('Subscribe', () => {
     });
 
     await client.waitForClose(() => {
-      fail('Shouldt have closed');
+      fail("Shouldn't have closed");
     }, 30);
   });
 
@@ -1038,7 +1039,7 @@ describe('Subscribe', () => {
     });
 
     await client.waitForClose(() => {
-      fail('Shouldt have closed');
+      fail("Shouldn't have closed");
     }, 30);
   });
 
@@ -1089,8 +1090,9 @@ describe('Subscribe', () => {
       });
     }
 
+    await client.waitForMessage();
     await client.waitForClose(() => {
-      fail('Shouldt have closed');
+      fail("Shouldn't have closed");
     }, 30);
   });
 
@@ -1333,7 +1335,7 @@ describe('Subscribe', () => {
     });
 
     await client.waitForClose(() => {
-      fail('Shouldnt close because of GraphQL errors');
+      fail("Shouldn't close because of GraphQL errors");
     }, 30);
   });
 
@@ -1952,4 +1954,106 @@ it('should only accept a Set, Array or string in handleProtocol', () => {
       handleProtocols(test.in),
     ).toBe(test.out);
   }
+});
+
+describe('Failable queries', () => {
+  async function queryThrowingFrom(variables: {
+    resolve?: boolean;
+  }): Promise<void> {
+    const { url } = await startTServer({
+      schema,
+    });
+
+    const client = await createTClient(url);
+    client.ws.send(
+      stringifyMessage<MessageType.ConnectionInit>({
+        type: MessageType.ConnectionInit,
+      }),
+    );
+
+    await client.waitForMessage(({ data }) => {
+      expect(parseMessage(data).type).toBe(MessageType.ConnectionAck);
+      client.ws.send(
+        stringifyMessage<MessageType.Subscribe>({
+          id: '1',
+          type: MessageType.Subscribe,
+          payload: {
+            query: `query($resolve: Boolean) {
+              throwingFrom(resolve: $resolve)
+            }`,
+            variables,
+          },
+        }),
+      );
+    });
+
+    const responses = await client.waitForSnapshot();
+    expect(responses).toMatchSnapshot(JSON.stringify(variables));
+  }
+
+  it('should complete without errors when nothing is thrown', async () => {
+    await queryThrowingFrom({});
+  });
+
+  it('should complete with errors when resolve throws', async () => {
+    await queryThrowingFrom({ resolve: true });
+  });
+});
+
+describe('Failable subscriptions', () => {
+  async function subscribeThrowingFrom(variables: {
+    beforeGenerator?: boolean;
+    generatorStep?: number;
+    resolveStep?: number;
+  }): Promise<void> {
+    const { url } = await startTServer({
+      schema,
+    });
+
+    const client = await createTClient(url);
+    client.ws.send(
+      stringifyMessage<MessageType.ConnectionInit>({
+        type: MessageType.ConnectionInit,
+      }),
+    );
+
+    await client.waitForMessage(({ data }) => {
+      expect(parseMessage(data).type).toBe(MessageType.ConnectionAck);
+      client.ws.send(
+        stringifyMessage<MessageType.Subscribe>({
+          id: '1',
+          type: MessageType.Subscribe,
+          payload: {
+            query: `subscription($beforeGenerator: Boolean, $generatorStep: Int, $resolveStep: Int) {
+              throwingFrom(beforeGenerator: $beforeGenerator, generatorStep: $generatorStep, resolveStep: $resolveStep)
+            }`,
+            variables,
+          },
+        }),
+      );
+    });
+
+    const responses = await client.waitForSnapshot();
+    expect(responses).toMatchSnapshot(JSON.stringify(variables));
+  }
+
+  it('should complete without errors when nothing is thrown', async () => {
+    await subscribeThrowingFrom({});
+  });
+
+  it('should complete with errors when subscribe throws before returning a generator', async () => {
+    await subscribeThrowingFrom({ beforeGenerator: true });
+  });
+
+  it('should close the socket when the generator throws from next', async () => {
+    await subscribeThrowingFrom({ generatorStep: 1 });
+    await subscribeThrowingFrom({ generatorStep: 2 });
+    await subscribeThrowingFrom({ generatorStep: 3 });
+  });
+
+  it('should complete with errors when resolve throws', async () => {
+    await subscribeThrowingFrom({ resolveStep: 1 });
+    await subscribeThrowingFrom({ resolveStep: 2 });
+    await subscribeThrowingFrom({ resolveStep: 3 });
+  });
 });
