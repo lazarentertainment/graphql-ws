@@ -693,7 +693,10 @@ export function makeServer<
                   stringifyMessage<MessageType.Next>(nextMessage, replacer),
                 );
               },
-              error: async (errors: readonly GraphQLError[]) => {
+              error: async (
+                errors: readonly GraphQLError[],
+                notifyClient: boolean,
+              ) => {
                 let errorMessage: ErrorMessage = {
                   id,
                   type: MessageType.Error,
@@ -705,9 +708,10 @@ export function makeServer<
                     ...errorMessage,
                     payload: maybeErrors,
                   };
-                await socket.send(
-                  stringifyMessage<MessageType.Error>(errorMessage, replacer),
-                );
+                if (notifyClient)
+                  await socket.send(
+                    stringifyMessage<MessageType.Error>(errorMessage, replacer),
+                  );
               },
               complete: async (notifyClient: boolean) => {
                 const completeMessage: CompleteMessage = {
@@ -730,7 +734,10 @@ export function makeServer<
               const maybeExecArgsOrErrors = await onSubscribe?.(ctx, message);
               if (maybeExecArgsOrErrors) {
                 if (areGraphQLErrors(maybeExecArgsOrErrors))
-                  return await emit.error(maybeExecArgsOrErrors);
+                  return await emit.error(
+                    maybeExecArgsOrErrors,
+                    id in ctx.subscriptions,
+                  );
                 else if (Array.isArray(maybeExecArgsOrErrors))
                   throw new Error(
                     'Invalid return value from onSubscribe hook, expected an array of GraphQLError objects',
@@ -760,7 +767,10 @@ export function makeServer<
                   execArgs.document,
                 );
                 if (validationErrors.length > 0)
-                  return await emit.error(validationErrors);
+                  return await emit.error(
+                    validationErrors,
+                    id in ctx.subscriptions,
+                  );
               }
 
               const operationAST = getOperationAST(
@@ -768,9 +778,10 @@ export function makeServer<
                 execArgs.operationName,
               );
               if (!operationAST)
-                return await emit.error([
-                  new GraphQLError('Unable to identify operation'),
-                ]);
+                return await emit.error(
+                  [new GraphQLError('Unable to identify operation')],
+                  id in ctx.subscriptions,
+                );
 
               // if `onSubscribe` didn't specify a rootValue, inject one
               if (!('rootValue' in execArgs))
