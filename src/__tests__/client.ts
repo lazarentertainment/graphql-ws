@@ -17,9 +17,14 @@ import {
   stringifyMessage,
   SubscribePayload,
 } from '../common';
-import { startRawServer, startWSTServer as startTServer } from './utils';
+import {
+  handleErrors,
+  startRawServer,
+  startWSTServer as startTServer,
+} from './utils';
 import { ExecutionResult, GraphQLError } from 'graphql';
 import { pong } from './fixtures/simple';
+import { ServerOptions } from '../server';
 
 // silence console.error calls for nicer tests overview
 const consoleError = console.error;
@@ -2660,12 +2665,15 @@ describe('failable queries', () => {
 });
 
 describe('failable subscriptions', () => {
-  async function subscribeThrowingFrom(variables: {
-    beforeGenerator?: boolean;
-    generatorStep?: number;
-    resolveStep?: number;
-  }): Promise<void> {
-    const { url } = await startTServer();
+  async function subscribeThrowingFrom(
+    variables: {
+      beforeGenerator?: boolean;
+      generatorStep?: number;
+      resolveStep?: number;
+    },
+    options?: Partial<ServerOptions>,
+  ): Promise<void> {
+    const { url } = await startTServer(options);
 
     const client = createClient({
       url,
@@ -2695,6 +2703,21 @@ describe('failable subscriptions', () => {
     await subscribeThrowingFrom({ generatorStep: 1 });
     await subscribeThrowingFrom({ generatorStep: 2 });
     await subscribeThrowingFrom({ generatorStep: 3 });
+  });
+
+  it('should iterate successfully when the generator throws from next with error handling', async () => {
+    await subscribeThrowingFrom(
+      { generatorStep: 1 },
+      { onOperation: handleErrors },
+    );
+    await subscribeThrowingFrom(
+      { generatorStep: 2 },
+      { onOperation: handleErrors },
+    );
+    await subscribeThrowingFrom(
+      { generatorStep: 3 },
+      { onOperation: handleErrors },
+    );
   });
 
   it('should iterate successfully when resolve throws', async () => {

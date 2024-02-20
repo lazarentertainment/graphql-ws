@@ -199,6 +199,69 @@ exports[`failable subscriptions should iterate successfully when subscribe throw
 ]
 `;
 
+exports[`failable subscriptions should iterate successfully when the generator throws from next with error handling: {"generatorStep":1} 1`] = `
+[
+  {
+    "result": {
+      "errors": [
+        {
+          "message": "Kaboom from generator step 1!",
+        },
+      ],
+    },
+  },
+]
+`;
+
+exports[`failable subscriptions should iterate successfully when the generator throws from next with error handling: {"generatorStep":2} 1`] = `
+[
+  {
+    "result": {
+      "data": {
+        "throwingFrom": "1",
+      },
+    },
+  },
+  {
+    "result": {
+      "errors": [
+        {
+          "message": "Kaboom from generator step 2!",
+        },
+      ],
+    },
+  },
+]
+`;
+
+exports[`failable subscriptions should iterate successfully when the generator throws from next with error handling: {"generatorStep":3} 1`] = `
+[
+  {
+    "result": {
+      "data": {
+        "throwingFrom": "1",
+      },
+    },
+  },
+  {
+    "result": {
+      "data": {
+        "throwingFrom": "2",
+      },
+    },
+  },
+  {
+    "result": {
+      "errors": [
+        {
+          "message": "Kaboom from generator step 3!",
+        },
+      ],
+    },
+  },
+]
+`;
+
 exports[`failable subscriptions should throw an error when the generator throws from next: {"generatorStep":1} 1`] = `
 [
   {
