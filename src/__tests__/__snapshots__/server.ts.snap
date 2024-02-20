@@ -81,14 +81,14 @@ exports[`Failable subscriptions should complete with errors when subscribe throw
 ]
 `;
 
-exports[`Failable subscriptions should complete with errors when the generator throws from next with an error handler: {"generatorStep":1} 1`] = `
+exports[`Failable subscriptions should complete with errors when the generator throws from next with error recovery: {"generatorStep":1} 1`] = `
 [
   "{"id":"1","type":"next","payload":{"errors":[{"message":"Kaboom from generator step 1!"}]}}",
   "{"id":"1","type":"complete"}",
 ]
 `;
 
-exports[`Failable subscriptions should complete with errors when the generator throws from next with an error handler: {"generatorStep":2} 1`] = `
+exports[`Failable subscriptions should complete with errors when the generator throws from next with error recovery: {"generatorStep":2} 1`] = `
 [
   "{"id":"1","type":"next","payload":{"data":{"throwingFrom":"1"}}}",
   "{"id":"1","type":"next","payload":{"errors":[{"message":"Kaboom from generator step 2!"}]}}",
@@ -96,7 +96,7 @@ exports[`Failable subscriptions should complete with errors when the generator t
 ]
 `;
 
-exports[`Failable subscriptions should complete with errors when the generator throws from next with an error handler: {"generatorStep":3} 1`] = `
+exports[`Failable subscriptions should complete with errors when the generator throws from next with error recovery: {"generatorStep":3} 1`] = `
 [
   "{"id":"1","type":"next","payload":{"data":{"throwingFrom":"1"}}}",
   "{"id":"1","type":"next","payload":{"data":{"throwingFrom":"2"}}}",
@@ -111,5 +111,26 @@ exports[`Failable subscriptions should complete without errors when nothing is t
   "{"id":"1","type":"next","payload":{"data":{"throwingFrom":"2"}}}",
   "{"id":"1","type":"next","payload":{"data":{"throwingFrom":"3"}}}",
   "{"id":"1","type":"complete"}",
+]
+`;
+
+exports[`Failable subscriptions should error out when the generator throws from next with error conversion: {"generatorStep":1} 1`] = `
+[
+  "{"id":"1","type":"error","payload":[{"message":"Kaboom from generator step 1!"}]}",
+]
+`;
+
+exports[`Failable subscriptions should error out when the generator throws from next with error conversion: {"generatorStep":2} 1`] = `
+[
+  "{"id":"1","type":"next","payload":{"data":{"throwingFrom":"1"}}}",
+  "{"id":"1","type":"error","payload":[{"message":"Kaboom from generator step 2!"}]}",
+]
+`;
+
+exports[`Failable subscriptions should error out when the generator throws from next with error conversion: {"generatorStep":3} 1`] = `
+[
+  "{"id":"1","type":"next","payload":{"data":{"throwingFrom":"1"}}}",
+  "{"id":"1","type":"next","payload":{"data":{"throwingFrom":"2"}}}",
+  "{"id":"1","type":"error","payload":[{"message":"Kaboom from generator step 3!"}]}",
 ]
 `;

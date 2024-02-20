@@ -2705,7 +2705,7 @@ describe('failable subscriptions', () => {
     await subscribeThrowingFrom({ generatorStep: 3 });
   });
 
-  it('should iterate successfully when the generator throws from next with error handling', async () => {
+  it('should iterate successfully when the generator throws from next with error recovery', async () => {
     await subscribeThrowingFrom(
       { generatorStep: 1 },
       { onOperation: handleErrors },
@@ -2717,6 +2717,21 @@ describe('failable subscriptions', () => {
     await subscribeThrowingFrom(
       { generatorStep: 3 },
       { onOperation: handleErrors },
+    );
+  });
+
+  it('should throw an error when the generator throws from next with error conversion', async () => {
+    await subscribeThrowingFrom(
+      { generatorStep: 1 },
+      { onOperationFailure: (_c, _m, _a, e) => [new GraphQLError(e?.message)] },
+    );
+    await subscribeThrowingFrom(
+      { generatorStep: 2 },
+      { onOperationFailure: (_c, _m, _a, e) => [new GraphQLError(e?.message)] },
+    );
+    await subscribeThrowingFrom(
+      { generatorStep: 3 },
+      { onOperationFailure: (_c, _m, _a, e) => [new GraphQLError(e?.message)] },
     );
   });
 

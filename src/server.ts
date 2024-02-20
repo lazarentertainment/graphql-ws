@@ -326,6 +326,29 @@ export interface ServerOptions<
     result: OperationResult,
   ) => Promise<OperationResult | void> | OperationResult | void;
   /**
+   * Executed if a streaming operation throws an exception while
+   * waiting for the next value.
+   *
+   * The `error` argument is the exception that was caught.
+   *
+   * Use this callback to control how the exception is handled.
+   * If the callback returns an array of `GraphQLError` instances,
+   * they will be sent to the client via an `Error` message,
+   * terminating the stream. If nothing is returned or if the
+   * callback isn't provided, then the socket will be closed with
+   * the exception's message in the close event reason.
+   *
+   * Throwing an error from within this function will
+   * close the socket with the `Error` message
+   * in the close event reason.
+   */
+  onOperationFailure?: (
+    ctx: Context<P, E>,
+    message: SubscribeMessage,
+    args: ExecutionArgs,
+    error: any,
+  ) => Promise<readonly GraphQLError[] | void> | readonly GraphQLError[] | void;
+  /**
    * Executed after an error occurred right before it
    * has been dispatched to the client.
    *
@@ -547,6 +570,7 @@ export function makeServer<
     onClose,
     onSubscribe,
     onOperation,
+    onOperationFailure,
     onNext,
     onError,
     onComplete,
@@ -693,7 +717,10 @@ export function makeServer<
                   stringifyMessage<MessageType.Next>(nextMessage, replacer),
                 );
               },
-              error: async (errors: readonly GraphQLError[]) => {
+              error: async (
+                errors: readonly GraphQLError[],
+                notifyClient: boolean,
+              ) => {
                 let errorMessage: ErrorMessage = {
                   id,
                   type: MessageType.Error,
@@ -705,9 +732,10 @@ export function makeServer<
                     ...errorMessage,
                     payload: maybeErrors,
                   };
-                await socket.send(
-                  stringifyMessage<MessageType.Error>(errorMessage, replacer),
-                );
+                if (notifyClient)
+                  await socket.send(
+                    stringifyMessage<MessageType.Error>(errorMessage, replacer),
+                  );
               },
               complete: async (notifyClient: boolean) => {
                 const completeMessage: CompleteMessage = {
@@ -730,7 +758,10 @@ export function makeServer<
               const maybeExecArgsOrErrors = await onSubscribe?.(ctx, message);
               if (maybeExecArgsOrErrors) {
                 if (areGraphQLErrors(maybeExecArgsOrErrors))
-                  return await emit.error(maybeExecArgsOrErrors);
+                  return await emit.error(
+                    maybeExecArgsOrErrors,
+                    id in ctx.subscriptions,
+                  );
                 else if (Array.isArray(maybeExecArgsOrErrors))
                   throw new Error(
                     'Invalid return value from onSubscribe hook, expected an array of GraphQLError objects',
@@ -760,7 +791,10 @@ export function makeServer<
                   execArgs.document,
                 );
                 if (validationErrors.length > 0)
-                  return await emit.error(validationErrors);
+                  return await emit.error(
+                    validationErrors,
+                    id in ctx.subscriptions,
+                  );
               }
 
               const operationAST = getOperationAST(
@@ -768,9 +802,10 @@ export function makeServer<
                 execArgs.operationName,
               );
               if (!operationAST)
-                return await emit.error([
-                  new GraphQLError('Unable to identify operation'),
-                ]);
+                return await emit.error(
+                  [new GraphQLError('Unable to identify operation')],
+                  id in ctx.subscriptions,
+                );
 
               // if `onSubscribe` didn't specify a rootValue, inject one
               if (!('rootValue' in execArgs))
@@ -802,29 +837,54 @@ export function makeServer<
               );
               if (maybeResult) operationResult = maybeResult;
 
-              if (isAsyncIterable(operationResult)) {
-                /** multiple emitted results */
-                if (!(id in ctx.subscriptions)) {
-                  // subscription was completed/canceled before the operation settled
-                  if (isAsyncGenerator(operationResult))
-                    operationResult.return(undefined);
-                } else {
-                  ctx.subscriptions[id] = operationResult;
+              if (!isAsyncIterable(operationResult)) {
+                /** treat a single emitted result as multiple results */
+                // eslint-disable-next-line no-inner-declarations
+                async function* asAsyncGenerator(result: ExecutionResult) {
+                  yield result;
+                }
+
+                operationResult = asAsyncGenerator(operationResult);
+              }
+
+              if (id in ctx.subscriptions) {
+                ctx.subscriptions[id] = operationResult;
+
+                // using a boolean to track whether an error was thrown from the
+                // call to await the next value or not is significantly simpler
+                // and more reliable than desugaring the `for await ... of` loop,
+                // which ends up using the exact same pattern to determine if the
+                // iterator's `return` method needs to be called
+                let awaitNextFailed = true;
+                try {
                   for await (const result of operationResult) {
+                    awaitNextFailed = false;
                     await emit.next(result, execArgs);
+                    awaitNextFailed = true;
+                  }
+                  awaitNextFailed = false;
+
+                  // lack of subscription at this point indicates that the client
+                  // completed the subscription, he doesn't need to be reminded
+                  await emit.complete(id in ctx.subscriptions);
+                } catch (error) {
+                  const errors = awaitNextFailed
+                    ? await onOperationFailure?.(ctx, message, execArgs, error)
+                    : undefined;
+
+                  if (errors) {
+                    await emit.error(errors, id in ctx.subscriptions);
+                  } else {
+                    throw error;
                   }
                 }
               } else {
-                /** single emitted result */
-                // if the client completed the subscription before the single result
-                // became available, he effectively canceled it and no data should be sent
-                if (id in ctx.subscriptions)
-                  await emit.next(operationResult, execArgs);
-              }
+                // subscription was completed/canceled before the operation settled
+                if (isAsyncGenerator(operationResult))
+                  operationResult.return(undefined);
 
-              // lack of subscription at this point indicates that the client
-              // completed the subscription, he doesn't need to be reminded
-              await emit.complete(id in ctx.subscriptions);
+                await emit.complete(false);
+              }
             } finally {
               // whatever happens to the subscription, we finally want to get rid of the reservation
               delete ctx.subscriptions[id];

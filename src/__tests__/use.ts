@@ -271,6 +271,17 @@ for (const { tServer, skipUWS, startTServer } of tServers) {
       await test(server.url);
       await server.dispose();
 
+      // onOperationFailure
+      server = await startTServer({
+        onOperationFailure: () => {
+          throw error;
+        },
+      });
+      await test(server.url, {
+        query: 'subscription { throwingFrom(generatorStep: 1) }',
+      });
+      await server.dispose();
+
       // onError
       server = await startTServer({
         onError: () => {
