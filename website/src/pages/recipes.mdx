@@ -1803,16 +1803,15 @@ const client = createClientWithSubscribeAck({
 })();
 ```
 
-## [ws](https://github.com/websockets/ws) server usage with async iterator error recovery
+## [ws](https://github.com/websockets/ws) server usage with async iterator error conversion to `ExecutionResult`
 
-See the unit tests for an example of the output of using this approach to error handling.
+Converts an exception thrown from an async iterator to an `ExecutionResult` and completes the stream.
 
 ```typescript
-import { parse, validate } from 'graphql';
 import { WebSocketServer } from 'ws';
 import { isAsyncIterable } from 'graphql-ws/lib/utils';
 import { useServer } from 'graphql-ws/lib/use/ws';
-import { schema, myValidationRules } from './my-graphql';
+import { schema } from './my-graphql';
 
 function wrapAsyncIterable<T>(
   iterable: AsyncIterable<T> | AsyncIterableIterator<T>,
@@ -1848,6 +1847,7 @@ const wsServer = new WebSocketServer({
 
 useServer(
   {
+    schema,
     onOperation: (_ctx, _msg, _args, operationResult) => {
       if (isAsyncIterable(operationResult)) {
         return wrapAsyncIterable(operationResult, (next) =>
@@ -1864,6 +1864,31 @@ useServer(
         return operationResult;
       }
     },
+  },
+  wsServer,
+);
+```
+
+## [ws](https://github.com/websockets/ws) server usage with async iterator error conversion to `Error` message
+
+Converts an exception thrown from an async iterator to an `Error` message, completing the stream.
+
+```typescript
+import { WebSocketServer } from 'ws';
+import { useServer } from 'graphql-ws/lib/use/ws';
+import { schema } from './my-graphql';
+
+const wsServer = new WebSocketServer({
+  port: 4000,
+  path: '/graphql',
+});
+
+useServer(
+  {
+    schema,
+    onOperationFailure: (_ctx, _msg, _args, error) => [
+      new GraphQLError(e?.message),
+    ],
   },
   wsServer,
 );

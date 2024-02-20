@@ -326,6 +326,29 @@ export interface ServerOptions<
     result: OperationResult,
   ) => Promise<OperationResult | void> | OperationResult | void;
   /**
+   * Executed if a streaming operation throws an exception while
+   * waiting for the next value.
+   *
+   * The `error` argument is the exception that was caught.
+   *
+   * Use this callback to control how the exception is handled.
+   * If the callback returns an array of `GraphQLError` instances,
+   * they will be sent to the client via an `Error` message,
+   * terminating the stream. If nothing is returned or if the
+   * callback isn't provided, then the socket will be closed with
+   * the exception's message in the close event reason.
+   *
+   * Throwing an error from within this function will
+   * close the socket with the `Error` message
+   * in the close event reason.
+   */
+  onOperationFailure?: (
+    ctx: Context<P, E>,
+    message: SubscribeMessage,
+    args: ExecutionArgs,
+    error: any,
+  ) => Promise<readonly GraphQLError[] | void> | readonly GraphQLError[] | void;
+  /**
    * Executed after an error occurred right before it
    * has been dispatched to the client.
    *
@@ -547,6 +570,7 @@ export function makeServer<
     onClose,
     onSubscribe,
     onOperation,
+    onOperationFailure,
     onNext,
     onError,
     onComplete,
@@ -825,13 +849,35 @@ export function makeServer<
 
               if (id in ctx.subscriptions) {
                 ctx.subscriptions[id] = operationResult;
-                for await (const result of operationResult) {
-                  await emit.next(result, execArgs);
-                }
 
-                // lack of subscription at this point indicates that the client
-                // completed the subscription, he doesn't need to be reminded
-                await emit.complete(id in ctx.subscriptions);
+                // using a boolean to track whether an error was thrown from the
+                // call to await the next value or not is significantly simpler
+                // and more reliable than desugaring the `for await ... of` loop,
+                // which ends up using the exact same pattern to determine if the
+                // iterator's `return` method needs to be called
+                let awaitNextFailed = true;
+                try {
+                  for await (const result of operationResult) {
+                    awaitNextFailed = false;
+                    await emit.next(result, execArgs);
+                    awaitNextFailed = true;
+                  }
+                  awaitNextFailed = false;
+
+                  // lack of subscription at this point indicates that the client
+                  // completed the subscription, he doesn't need to be reminded
+                  await emit.complete(id in ctx.subscriptions);
+                } catch (error) {
+                  const errors = awaitNextFailed
+                    ? await onOperationFailure?.(ctx, message, execArgs, error)
+                    : undefined;
+
+                  if (errors) {
+                    await emit.error(errors, id in ctx.subscriptions);
+                  } else {
+                    throw error;
+                  }
+                }
               } else {
                 // subscription was completed/canceled before the operation settled
                 if (isAsyncGenerator(operationResult))
