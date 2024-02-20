@@ -1802,3 +1802,69 @@ const client = createClientWithSubscribeAck({
   expect(onNext).then.toBeCalledTimes(5); // we say "Hi" in 5 languages
 })();
 ```
+
+## [ws](https://github.com/websockets/ws) server usage with async iterator error recovery
+
+See the unit tests for an example of the output of using this approach to error handling.
+
+```typescript
+import { parse, validate } from 'graphql';
+import { WebSocketServer } from 'ws';
+import { isAsyncIterable } from 'graphql-ws/lib/utils';
+import { useServer } from 'graphql-ws/lib/use/ws';
+import { schema, myValidationRules } from './my-graphql';
+
+function wrapAsyncIterable<T>(
+  iterable: AsyncIterable<T> | AsyncIterableIterator<T>,
+  onNext: (promise: Promise<IteratorResult<T>>) => Promise<IteratorResult<T>>,
+): AsyncIterable<T> | AsyncIterableIterator<T> {
+  function wrapIter(iterator: AsyncIterator<T>): AsyncIterator<T> {
+    const wrapper: AsyncIterator<T> = {
+      next: () => onNext(iterator.next()),
+    };
+
+    if (iterator.return) wrapper.return = iterator.return;
+    if (iterator.throw) wrapper.throw = iterator.throw;
+
+    return wrapper;
+  }
+
+  if ('next' in iterable) {
+    return {
+      ...wrapIter(iterable),
+      [Symbol.asyncIterator]: () => wrapIter(iterable[Symbol.asyncIterator]()),
+    };
+  } else {
+    return {
+      [Symbol.asyncIterator]: () => wrapIter(iterable[Symbol.asyncIterator]()),
+    };
+  }
+}
+
+const wsServer = new WebSocketServer({
+  port: 4000,
+  path: '/graphql',
+});
+
+useServer(
+  {
+    onOperation: (_ctx, _msg, _args, operationResult) => {
+      if (isAsyncIterable(operationResult)) {
+        return wrapAsyncIterable(operationResult, (next) =>
+          next.catch((err) =>
+            Promise.resolve({
+              done: false,
+              value: {
+                errors: [new GraphQLError(err?.message)],
+              },
+            }),
+          ),
+        );
+      } else {
+        return operationResult;
+      }
+    },
+  },
+  wsServer,
+);
+```

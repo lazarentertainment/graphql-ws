@@ -81,6 +81,30 @@ exports[`Failable subscriptions should complete with errors when subscribe throw
 ]
 `;
 
+exports[`Failable subscriptions should complete with errors when the generator throws from next with an error handler: {"generatorStep":1} 1`] = `
+[
+  "{"id":"1","type":"next","payload":{"errors":[{"message":"Kaboom from generator step 1!"}]}}",
+  "{"id":"1","type":"complete"}",
+]
+`;
+
+exports[`Failable subscriptions should complete with errors when the generator throws from next with an error handler: {"generatorStep":2} 1`] = `
+[
+  "{"id":"1","type":"next","payload":{"data":{"throwingFrom":"1"}}}",
+  "{"id":"1","type":"next","payload":{"errors":[{"message":"Kaboom from generator step 2!"}]}}",
+  "{"id":"1","type":"complete"}",
+]
+`;
+
+exports[`Failable subscriptions should complete with errors when the generator throws from next with an error handler: {"generatorStep":3} 1`] = `
+[
+  "{"id":"1","type":"next","payload":{"data":{"throwingFrom":"1"}}}",
+  "{"id":"1","type":"next","payload":{"data":{"throwingFrom":"2"}}}",
+  "{"id":"1","type":"next","payload":{"errors":[{"message":"Kaboom from generator step 3!"}]}}",
+  "{"id":"1","type":"complete"}",
+]
+`;
+
 exports[`Failable subscriptions should complete without errors when nothing is thrown: {} 1`] = `
 [
   "{"id":"1","type":"next","payload":{"data":{"throwingFrom":"1"}}}",

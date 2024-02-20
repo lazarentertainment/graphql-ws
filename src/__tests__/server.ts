@@ -8,7 +8,7 @@ import {
   ExecutionResult,
   GraphQLSchema,
 } from 'graphql';
-import { Context, handleProtocols, makeServer } from '../server';
+import { Context, ServerOptions, handleProtocols, makeServer } from '../server';
 import {
   GRAPHQL_TRANSPORT_WS_PROTOCOL,
   CloseCode,
@@ -17,7 +17,11 @@ import {
   stringifyMessage,
 } from '../common';
 import { schema, schemaConfig } from './fixtures/simple';
-import { createTClient, startWSTServer as startTServer } from './utils';
+import {
+  createTClient,
+  handleErrors,
+  startWSTServer as startTServer,
+} from './utils';
 
 // silence console.error calls for nicer tests overview
 const consoleError = console.error;
@@ -2001,13 +2005,17 @@ describe('Failable queries', () => {
 });
 
 describe('Failable subscriptions', () => {
-  async function subscribeThrowingFrom(variables: {
-    beforeGenerator?: boolean;
-    generatorStep?: number;
-    resolveStep?: number;
-  }): Promise<void> {
+  async function subscribeThrowingFrom(
+    variables: {
+      beforeGenerator?: boolean;
+      generatorStep?: number;
+      resolveStep?: number;
+    },
+    options?: Partial<ServerOptions>,
+  ): Promise<void> {
     const { url } = await startTServer({
       schema,
+      ...options,
     });
 
     const client = await createTClient(url);
@@ -2049,6 +2057,21 @@ describe('Failable subscriptions', () => {
     await subscribeThrowingFrom({ generatorStep: 1 });
     await subscribeThrowingFrom({ generatorStep: 2 });
     await subscribeThrowingFrom({ generatorStep: 3 });
+  });
+
+  it('should complete with errors when the generator throws from next with an error handler', async () => {
+    await subscribeThrowingFrom(
+      { generatorStep: 1 },
+      { onOperation: handleErrors },
+    );
+    await subscribeThrowingFrom(
+      { generatorStep: 2 },
+      { onOperation: handleErrors },
+    );
+    await subscribeThrowingFrom(
+      { generatorStep: 3 },
+      { onOperation: handleErrors },
+    );
   });
 
   it('should complete with errors when resolve throws', async () => {
